@@ -3,29 +3,31 @@
 @tailwind utilities;
 
 :root {
-  --bg-ivory: #F7F5F0;
-  --text-ink: #121316;
+  --bg-dark: #020617;
+  --text-light: #f8fafc;
 }
 
 body {
-  background-color: var(--bg-ivory);
-  color: var(--text-ink);
+  background-color: var(--bg-dark);
+  color: var(--text-light);
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   -webkit-font-smoothing: antialiased;
 }
 
 .ticket-stub {
   position: relative;
-  background: #121316;
-  color: #F7F5F0;
+  background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+  color: #f8fafc;
+  border: 1px solid rgba(56, 189, 248, 0.35);
   border-radius: 10px;
   padding: 0.75rem 1.25rem;
   font-variant-numeric: tabular-nums;
-  box-shadow: 0 4px 14px rgba(18, 19, 22, 0.08);
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: 0 4px 18px rgba(0, 112, 209, 0.2);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
 }
 
 .ticket-stub:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(18, 19, 22, 0.14);
+  border-color: rgba(52, 211, 153, 0.7);
+  box-shadow: 0 6px 24px rgba(16, 185, 129, 0.25);
 }

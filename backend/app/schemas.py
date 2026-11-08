@@ -3,40 +3,101 @@ from typing import List, Optional, Literal
 from pydantic import BaseModel, EmailStr, Field, field_validator
 import re
 
+PACK_DOWNLOADS = {
+    "inicial": [
+        "/downloads/guia-optimizacion-red-fps-gaming-v2.pdf",
+    ],
+    "impulso": [
+        "/downloads/guia-optimizacion-red-fps-gaming-v2.pdf",
+        "/downloads/manual-configuracion-pantallas-120hz-144hz-v2.pdf",
+    ],
+    "pro": [
+        "/downloads/guia-optimizacion-red-fps-gaming-v2.pdf",
+        "/downloads/manual-configuracion-pantallas-120hz-144hz-v2.pdf",
+        "/downloads/catalogo-trucos-gta-v2.pdf",
+    ],
+}
+
 PACK_CONFIG = {
-    "pack_1": {
-        "id": "pack_1",
-        "title": "Pack Inicial — Guía Digital + 2 Chances",
-        "ebook_title": "Manual de Optimización & Productividad Digital (Edición 2026)",
+    "inicial": {
+        "id": "inicial",
+        "name": "Pack Inicial",
+        "title": "Guía Optimización de Red y FPS Gaming (v2)",
+        "ebook_title": "Guía Optimización de Red y FPS Gaming (v2)",
         "chances": 2,
         "price": 5000.00,
-        "badge": "Acceso Inmediato",
+        "badge": "Pack Inicial · 2 Chances",
+        "downloads": PACK_DOWNLOADS["inicial"],
+    },
+    "impulso": {
+        "id": "impulso",
+        "name": "Pack Impulso",
+        "title": "Pack Rendimiento: FPS + Manual Pantallas 120Hz/144Hz (v2)",
+        "ebook_title": "Pack Rendimiento: FPS + Manual Pantallas 120Hz/144Hz (v2)",
+        "chances": 6,
+        "price": 10000.00,
+        "badge": "Más Elegido · 6 Chances",
+        "downloads": PACK_DOWNLOADS["impulso"],
+    },
+    "pro": {
+        "id": "pro",
+        "name": "Pack Pro",
+        "title": "Trilogía Gamer Pro + Catálogo Trucos GTA (v2)",
+        "ebook_title": "Trilogía Gamer Pro + Catálogo Trucos GTA (v2)",
+        "chances": 15,
+        "price": 20000.00,
+        "badge": "Mejor Valor · 15 Chances",
+        "downloads": PACK_DOWNLOADS["pro"],
+    },
+    # Alias de compatibilidad hacia atrás
+    "pack_1": {
+        "id": "inicial",
+        "name": "Pack Inicial",
+        "title": "Guía Optimización de Red y FPS Gaming (v2)",
+        "ebook_title": "Guía Optimización de Red y FPS Gaming (v2)",
+        "chances": 2,
+        "price": 5000.00,
+        "badge": "Pack Inicial · 2 Chances",
+        "downloads": PACK_DOWNLOADS["inicial"],
     },
     "pack_2": {
-        "id": "pack_2",
-        "title": "Pack Impulso — Colección 2 eBooks + 6 Chances",
-        "ebook_title": "Colección Maestra: Finanzas Personales & Automatización",
+        "id": "impulso",
+        "name": "Pack Impulso",
+        "title": "Pack Rendimiento: FPS + Manual Pantallas 120Hz/144Hz (v2)",
+        "ebook_title": "Pack Rendimiento: FPS + Manual Pantallas 120Hz/144Hz (v2)",
         "chances": 6,
-        "price": 12000.00,
-        "badge": "Más Elegido",
+        "price": 10000.00,
+        "badge": "Más Elegido · 6 Chances",
+        "downloads": PACK_DOWNLOADS["impulso"],
     },
     "pack_3": {
-        "id": "pack_3",
-        "title": "Pack Pro — Biblioteca Completa + 15 Chances",
-        "ebook_title": "Biblioteca Integral de Negocios Digitales (5 PDFs + Plantillas)",
+        "id": "pro",
+        "name": "Pack Pro",
+        "title": "Trilogía Gamer Pro + Catálogo Trucos GTA (v2)",
+        "ebook_title": "Trilogía Gamer Pro + Catálogo Trucos GTA (v2)",
         "chances": 15,
-        "price": 25000.00,
-        "badge": "Mejor Valor (x3 Chances)",
+        "price": 20000.00,
+        "badge": "Mejor Valor · 15 Chances",
+        "downloads": PACK_DOWNLOADS["pro"],
     },
 }
+
+
+def get_downloads_for_pack(pack_type: str) -> List[str]:
+    normalized = (pack_type or "").strip().lower()
+    if normalized in PACK_CONFIG:
+        return list(PACK_CONFIG[normalized]["downloads"])
+    return list(PACK_DOWNLOADS["inicial"])
 
 
 class CheckoutRequest(BaseModel):
     dni: str = Field(..., min_length=6, max_length=15, description="DNI del comprador sin puntos")
     full_name: str = Field(..., min_length=3, max_length=150, description="Nombre y apellido completo")
-    email: EmailStr = Field(..., description="Correo electrónico donde recibirá el PDF y sus números")
+    email: EmailStr = Field(..., description="Correo electrónico donde recibirá los PDFs y sus números")
     whatsapp: str = Field(..., min_length=8, max_length=25, description="Número de WhatsApp de contacto")
-    pack_type: Literal["pack_1", "pack_2", "pack_3"] = Field(..., description="Identificador del pack elegido")
+    pack_type: Literal["inicial", "impulso", "pro", "pack_1", "pack_2", "pack_3"] = Field(
+        ..., description="Identificador del pack elegido"
+    )
 
     @field_validator("dni")
     @classmethod
@@ -72,6 +133,7 @@ class OrderTicketSummary(BaseModel):
     mp_payment_id: Optional[str] = None
     created_at: datetime
     tickets: List[str]
+    downloads: List[str]
 
 
 class UserTicketsResponse(BaseModel):
@@ -79,4 +141,5 @@ class UserTicketsResponse(BaseModel):
     full_name: Optional[str] = None
     total_tickets: int
     numbers: List[str]
+    downloads: List[str]
     orders: List[OrderTicketSummary]

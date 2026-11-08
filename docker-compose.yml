@@ -31,18 +31,19 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-sorteo_db}
       MP_ACCESS_TOKEN: ${MP_ACCESS_TOKEN:-TEST-0000000000000000-000000-00000000000000000000000000000000-000000000}
-      WEBHOOK_BASE_URL: ${WEBHOOK_BASE_URL:-https://tu-dominio.com}
+      WEBHOOK_BASE_URL: ${WEBHOOK_BASE_URL:-http://localhost:8000}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
-      EBOOK_PDF_URL: ${EBOOK_PDF_URL:-https://tu-dominio.com/downloads/ebook-guia-completa.pdf}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3000}
       SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-tu-correo@gmail.com}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-tu-app-password}
-      SMTP_FROM: ${SMTP_FROM:-"Sorteo & eBooks <tu-correo@gmail.com>"}
+      SMTP_FROM: ${SMTP_FROM:-"Sorteo PS5 & Gaming Pro <tu-correo@gmail.com>"}
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app
+      - ./:/host_project:ro
 
   frontend:
     build:
@@ -54,6 +55,7 @@ services:
       - backend
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      BACKEND_INTERNAL_URL: http://backend:8000
     ports:
       - "3000:3000"
 

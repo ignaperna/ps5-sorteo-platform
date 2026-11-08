@@ -1,13 +1,14 @@
 from contextlib import asynccontextmanager
 import logging
 import os
+from pathlib import Path
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import mercadopago
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -21,6 +22,7 @@ from .schemas import (
     CheckoutResponse,
     OrderTicketSummary,
     UserTicketsResponse,
+    get_downloads_for_pack,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -29,6 +31,13 @@ logger = logging.getLogger(__name__)
 MP_ACCESS_TOKEN = os.getenv("MP_ACCESS_TOKEN", "")
 WEBHOOK_BASE_URL = os.getenv("WEBHOOK_BASE_URL", "http://localhost:8000")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+
+ALLOWED_PDF_FILES = {
+    "vista-previa-paquete-guias-gaming-pro.pdf": "Vista Previa Gratuita - Paquete Guias Gaming Pro",
+    "guia-optimizacion-red-fps-gaming-v2.pdf": "Guia Optimizacion de Red y FPS Gaming (v2)",
+    "manual-configuracion-pantallas-120hz-144hz-v2.pdf": "Manual Configuracion Pantallas 120Hz/144Hz (v2)",
+    "catalogo-trucos-gta-v2.pdf": "Catalogo de Trucos GTA (v2)",
+}
 
 
 @asynccontextmanager
@@ -39,9 +48,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="API de Venta de Infoproductos & Sorteo Promocional",
+    title="API de Venta de Guías Gaming Pro & Sorteo PS5 Slim + GTA",
     description="Backend FastAPI + PostgreSQL + Mercado Pago Checkout Pro con asignación concurrente SKIP LOCKED.",
-    version="1.0.0",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
@@ -82,7 +91,7 @@ def create_mp_preference(order: Order, pack: Dict[str, Any]) -> Dict[str, Any]:
             {
                 "id": pack["id"],
                 "title": pack["title"],
-                "description": f"{pack['ebook_title']} + {pack['chances']} números promocionales",
+                "description": f"{pack['ebook_title']} + {pack['chances']} números promocionales Sorteo PS5 Slim",
                 "quantity": 1,
                 "currency_id": "ARS",
                 "unit_price": float(pack["price"]),
@@ -104,10 +113,9 @@ def create_mp_preference(order: Order, pack: Dict[str, Any]) -> Dict[str, Any]:
             "pending": f"{frontend_base}/?status=pending&dni={order.dni}&order_id={order.id}",
         },
         "auto_return": "approved",
-        "statement_descriptor": "EBOOKS SORTEO",
+        "statement_descriptor": "GAMING PRO PS5",
     }
 
-    # Si hay un token real configurado, llamamos a la API de Mercado Pago
     if MP_ACCESS_TOKEN and not MP_ACCESS_TOKEN.startswith("TEST-000000"):
         sdk = mercadopago.SDK(MP_ACCESS_TOKEN)
         pref_result = sdk.preference().create(preference_data)
@@ -117,7 +125,6 @@ def create_mp_preference(order: Order, pack: Dict[str, Any]) -> Dict[str, Any]:
             f"Mercado Pago devolvió status {pref_result.get('status')}: {pref_result.get('response')}"
         )
 
-    # Modo sandbox/desarrollo local cuando no se configuró un MP_ACCESS_TOKEN productivo
     mock_pref_id = f"PREF-DEV-{order.id}"
     sim_url = f"{frontend_base}/?simulate_order={order.id}&dni={order.dni}"
     return {
@@ -143,7 +150,8 @@ def health_check(db: Session = Depends(get_db)):
 
 @app.get("/api/packs")
 def list_packs():
-    return {"packs": list(PACK_CONFIG.values())}
+    primary_packs = [PACK_CONFIG["inicial"], PACK_CONFIG["impulso"], PACK_CONFIG["pro"]]
+    return {"packs": primary_packs}
 
 
 @app.post("/api/checkout", response_model=CheckoutResponse)
@@ -165,12 +173,13 @@ def create_checkout(payload: CheckoutRequest, db: Session = Depends(get_db)):
             detail="No quedan suficientes números disponibles para este pack.",
         )
 
+    canonical_pack_id = pack["id"]
     new_order = Order(
         dni=payload.dni,
         full_name=payload.full_name,
         email=payload.email,
         whatsapp=payload.whatsapp,
-        pack_type=payload.pack_type,
+        pack_type=canonical_pack_id,
         amount=pack["price"],
         status="pending",
     )
@@ -207,7 +216,7 @@ async def mercadopago_webhook(
     1. Valida el pago aprobado en la API de Mercado Pago.
     2. Asigna la cantidad de tickets correspondientes usando SELECT FOR UPDATE SKIP LOCKED.
     3. Cambia la orden a 'approved' y registra mp_payment_id.
-    4. Envía email con el link del PDF y los números de 5 dígitos asignados.
+    4. Envía email con los links de descarga de los PDFs correspondientes al pack y los números asignados.
     """
     body: Dict[str, Any] = {}
     try:
@@ -228,7 +237,6 @@ async def mercadopago_webhook(
 
     payment_id_str = str(payment_id)
 
-    # Modo simulación local (para pruebas de desarrollo sin credenciales productivas)
     if body.get("simulate_approved") is True and body.get("external_reference"):
         payment_info = {
             "id": payment_id_str,
@@ -256,7 +264,6 @@ async def mercadopago_webhook(
 
     order_id = int(external_reference)
 
-    # Bloqueamos la fila de la orden para garantizar idempotencia ante webhooks duplicados
     order = (
         db.query(Order)
         .filter(Order.id == order_id)
@@ -266,21 +273,23 @@ async def mercadopago_webhook(
     if not order:
         raise HTTPException(status_code=404, detail=f"Orden #{order_id} no encontrada.")
 
+    pack = PACK_CONFIG.get(order.pack_type)
+    if not pack:
+        raise HTTPException(status_code=400, detail="Pack asociado a la orden inválido.")
+
+    download_links = get_downloads_for_pack(order.pack_type)
+
     if order.status == "approved":
         existing_numbers = [t.number for t in order.tickets]
         return {
             "status": "already_processed",
             "order_id": order.id,
             "tickets": existing_numbers,
+            "downloads": download_links,
         }
-
-    pack = PACK_CONFIG.get(order.pack_type)
-    if not pack:
-        raise HTTPException(status_code=400, detail="Pack asociado a la orden inválido.")
 
     chances_to_assign = pack["chances"]
 
-    # Asignación concurrente segura en PostgreSQL con SELECT ... FOR UPDATE SKIP LOCKED
     selected_tickets = (
         db.query(Ticket)
         .filter(Ticket.order_id.is_(None))
@@ -314,6 +323,7 @@ async def mercadopago_webhook(
         pack_title=pack["title"],
         ticket_numbers=assigned_numbers,
         order_id=order.id,
+        download_links=download_links,
     )
 
     return {
@@ -321,13 +331,15 @@ async def mercadopago_webhook(
         "order_id": order.id,
         "mp_payment_id": order.mp_payment_id,
         "assigned_tickets": assigned_numbers,
+        "downloads": download_links,
     }
 
 
 @app.get("/api/tickets/{dni}", response_model=UserTicketsResponse)
 def get_tickets_by_dni(dni: str, db: Session = Depends(get_db)):
     """
-    Permite al usuario consultar todos sus números promocionales asignados ingresando su DNI.
+    Permite al usuario consultar todos sus números promocionales asignados y los enlaces
+    de descarga de sus guías en PDF según el pack comprado cuando la orden está 'approved'.
     """
     cleaned_dni = re.sub(r"\D", "", dni.strip())
     if not cleaned_dni:
@@ -340,24 +352,31 @@ def get_tickets_by_dni(dni: str, db: Session = Depends(get_db)):
         .all()
     )
 
-    all_numbers = []
-    order_summaries = []
+    all_numbers: List[str] = []
+    all_downloads: List[str] = []
+    order_summaries: List[OrderTicketSummary] = []
     buyer_name = approved_orders[0].full_name if approved_orders else None
 
     for order in approved_orders:
         order_numbers = sorted([t.number for t in order.tickets])
         all_numbers.extend(order_numbers)
         pack_info = PACK_CONFIG.get(order.pack_type, {})
+        order_downloads = get_downloads_for_pack(order.pack_type)
+        for dl in order_downloads:
+            if dl not in all_downloads:
+                all_downloads.append(dl)
+
         order_summaries.append(
             OrderTicketSummary(
                 order_id=order.id,
-                pack_type=order.pack_type,
+                pack_type=pack_info.get("id", order.pack_type),
                 pack_title=pack_info.get("title", order.pack_type),
                 amount=float(order.amount),
                 status=order.status,
                 mp_payment_id=order.mp_payment_id,
                 created_at=order.created_at,
                 tickets=order_numbers,
+                downloads=order_downloads,
             )
         )
 
@@ -366,33 +385,65 @@ def get_tickets_by_dni(dni: str, db: Session = Depends(get_db)):
         full_name=buyer_name,
         total_tickets=len(all_numbers),
         numbers=all_numbers,
+        downloads=all_downloads,
         orders=order_summaries,
     )
 
 
-@app.get("/api/downloads/ebook-edicion-2026.pdf")
-def download_sample_ebook():
+def _serve_pdf_file(filename: str):
     """
-    Sirve un archivo PDF de muestra válido para el enlace enviado por correo.
+    Sirve cualquiera de los 4 archivos PDF guardados en la raíz del proyecto (E:\\Proyectos\\PS5 SORTEO),
+    o genera un PDF de respaldo si aún no fue copiado al contenedor.
     """
+    safe_name = os.path.basename(filename)
+    if safe_name not in ALLOWED_PDF_FILES:
+        raise HTTPException(status_code=404, detail="Archivo PDF no encontrado.")
+
+    search_dirs = [
+        Path("/host_project"),
+        Path("/host_project/downloads"),
+        Path(__file__).resolve().parent.parent.parent,
+        Path(__file__).resolve().parent.parent,
+        Path("/home/antigravity"),
+    ]
+
+    for directory in search_dirs:
+        candidate = directory / safe_name
+        if candidate.is_file():
+            return FileResponse(
+                path=str(candidate),
+                media_type="application/pdf",
+                filename=safe_name,
+            )
+
+    title_text = ALLOWED_PDF_FILES[safe_name]
+    stream_content = f"BT /F1 16 Tf 50 720 Td ({title_text}) Tj ET\n".encode("latin-1")
     minimal_pdf = (
         b"%PDF-1.4\n"
         b"1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n"
         b"2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n"
         b"3 0 obj << /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> "
         b"/MediaBox [0 0 612 792] /Contents 5 0 R >> endobj\n"
-        b"4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n"
-        b"5 0 obj << /Length 88 >> stream\n"
-        b"BT /F1 18 Tf 72 700 Td (Guia Digital Exclusiva - Edicion 2026) Tj ET\n"
-        b"endstream endobj\n"
+        b"4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >> endobj\n"
+        + f"5 0 obj << /Length {len(stream_content)} >> stream\n".encode("ascii")
+        + stream_content
+        + b"endstream endobj\n"
         b"xref\n0 6\n0000000000 65535 f \n0000000009 00000 n \n0000000058 00000 n \n"
-        b"0000000115 00000 n \n0000000229 00000 n \n0000000297 00000 n \n"
-        b"trailer << /Size 6 /Root 1 0 R >>\nstartxref\n435\n%%EOF\n"
+        b"0000000115 00000 n \n0000000229 00000 n \n0000000302 00000 n \n"
+        b"trailer << /Size 6 /Root 1 0 R >>\nstartxref\n430\n%%EOF\n"
     )
     return Response(
         content=minimal_pdf,
         media_type="application/pdf",
-        headers={
-            "Content-Disposition": 'attachment; filename="ebook-edicion-2026.pdf"'
-        },
+        headers={"Content-Disposition": f'inline; filename="{safe_name}"'},
     )
+
+
+@app.get("/downloads/{filename}")
+def download_pdf_direct(filename: str):
+    return _serve_pdf_file(filename)
+
+
+@app.get("/api/downloads/{filename}")
+def download_pdf_api(filename: str):
+    return _serve_pdf_file(filename)

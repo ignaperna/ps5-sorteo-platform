@@ -1,17 +1,11 @@
 import type { Metadata } from "next";
-import { Plus_Jakarta_Sans, Fraunces, JetBrains_Mono } from "next/font/google";
+import { Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
 const sans = Plus_Jakarta_Sans({
   subsets: ["latin"],
   variable: "--font-sans",
-  weight: ["400", "500", "600", "700"],
-});
-
-const serif = Fraunces({
-  subsets: ["latin"],
-  variable: "--font-serif",
-  weight: ["600", "700"],
+  weight: ["400", "500", "600", "700", "800"],
 });
 
 const mono = JetBrains_Mono({
@@ -21,9 +15,9 @@ const mono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Ediciones & Sorteo | Biblioteca Digital con Chances Promocionales",
+  title: "SORTEO PLAYSTATION 5 SLIM + GTA | Guías Gaming Pro (PDF)",
   description:
-    "Adquirí nuestros eBooks en formato PDF con descarga inmediata y recibí números promocionales de 5 dígitos ('00000' a '99999') para el sorteo.",
+    "Adquirí tus Guías Gaming Pro en formato PDF (Optimización de Red y FPS, Monitores 120Hz/144Hz y Catálogo de Trucos GTA) y participá con tus números de 5 cifras por una PlayStation 5 Slim + GTA el 19 de noviembre de 2026.",
 };
 
 export default function RootLayout({
@@ -32,8 +26,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es" className={`${sans.variable} ${serif.variable} ${mono.variable}`}>
-      <body className="font-sans min-h-screen flex flex-col selection:bg-amber-800 selection:text-white">
+    <html lang="es" className={`${sans.variable} ${mono.variable} dark`}>
+      <body className="font-sans min-h-screen flex flex-col bg-slate-950 text-slate-100 selection:bg-blue-600 selection:text-white">
         {children}
       </body>
     </html>
