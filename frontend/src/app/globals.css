@@ -1,0 +1,31 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-ivory: #F7F5F0;
+  --text-ink: #121316;
+}
+
+body {
+  background-color: var(--bg-ivory);
+  color: var(--text-ink);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  -webkit-font-smoothing: antialiased;
+}
+
+.ticket-stub {
+  position: relative;
+  background: #121316;
+  color: #F7F5F0;
+  border-radius: 10px;
+  padding: 0.75rem 1.25rem;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 4px 14px rgba(18, 19, 22, 0.08);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.ticket-stub:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(18, 19, 22, 0.14);
+}
