@@ -1,24 +1,49 @@
 @echo off
-REM Script de inicio rapido para Windows
-echo ======================================================
-echo Iniciando Plataforma Sorteo eBooks con Docker Compose
-echo ======================================================
+title Actualizar y Ejecutar - Sorteo PS5 + Gaming Pro
+color 0A
+echo =====================================================================
+echo    ACTUALIZANDO Y EJECUTANDO EN E:\Proyectos\PS5 SORTEO
+echo =====================================================================
+echo.
 
-IF NOT EXIST .env (
-    echo Creando archivo .env a partir de .env.example...
-    copy .env.example .env
+set "TARGET_DIR=E:\Proyectos\PS5 SORTEO"
+if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%"
+cd /d "%TARGET_DIR%"
+
+echo [1/4] Descargando la ultima version del codigo (conservando tus 4 PDFs)...
+where git >nul 2>nul
+if %ERRORLEVEL% equ 0 (
+    git init
+    git remote remove origin >nul 2>nul
+    git remote add origin https://github.com/ignaperna/ps5-sorteo-platform.git
+    git fetch --all
+    git reset --hard origin/main
+) else (
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -Uri 'https://github.com/ignaperna/ps5-sorteo-platform/archive/refs/heads/main.zip' -OutFile 'update_pkg.zip'; Expand-Archive -Path 'update_pkg.zip' -DestinationPath 'temp_extract' -Force; Copy-Item -Path 'temp_extract\ps5-sorteo-platform-main\*' -Destination '.' -Recurse -Force; Remove-Item 'temp_extract', 'update_pkg.zip' -Recurse -Force"
 )
 
-echo Construyendo e iniciando contenedores: PostgreSQL, FastAPI y Next.js...
-docker compose up --build -d
+if not exist ".env" (
+    copy .env.example .env >nul
+)
 
 echo.
-echo ======================================================
-echo Servicios iniciados con exito!
-echo - Frontend Next.js:    http://localhost:3000
-echo - Backend FastAPI:     http://localhost:8000
-echo - Documentacion API:   http://localhost:8000/docs
-echo - Base de datos:       localhost:5432
-echo ======================================================
-echo Para ver los logs: docker compose logs -f
+echo [2/4] Deteniendo contenedores anteriores...
+docker compose down
+
+echo.
+echo [3/4] Reconstruyendo imagenes con el nuevo diseno Dark Gamer PS5...
+docker compose build --no-cache frontend backend
+
+echo.
+echo [4/4] Iniciando contenedores en Docker Desktop...
+docker compose up -d --force-recreate
+
+echo.
+echo =====================================================================
+echo    ACTUALIZACION COMPLETA!
+echo =====================================================================
+echo  - Abre en tu navegador: http://localhost:3000 (Presiona Ctrl + F5)
+echo  - API Backend Docs:     http://localhost:8000/docs
+echo =====================================================================
+start http://localhost:3000
 pause
