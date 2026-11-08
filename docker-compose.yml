@@ -39,6 +39,8 @@ services:
       SMTP_USER: ${SMTP_USER:-tu-correo@gmail.com}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-tu-app-password}
       SMTP_FROM: ${SMTP_FROM:-"Sorteo PS5 & Gaming Pro <tu-correo@gmail.com>"}
+      BREVO_API_KEY: ${BREVO_API_KEY:-}
+      BREVO_TEMPLATE_ID: ${BREVO_TEMPLATE_ID:-1}
     ports:
       - "8000:8000"
     volumes:

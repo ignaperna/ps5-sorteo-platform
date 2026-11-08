@@ -3,14 +3,21 @@ import os
 import smtplib
 from email.message import EmailMessage
 from typing import List, Optional
+import httpx
 
 logger = logging.getLogger(__name__)
 
+# Configuración Brevo API
+BREVO_API_KEY = os.getenv("BREVO_API_KEY", "")
+BREVO_TEMPLATE_ID = int(os.getenv("BREVO_TEMPLATE_ID", "1")) if os.getenv("BREVO_TEMPLATE_ID") else None
+
+# Fallback SMTP tradicional
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SMTP_FROM = os.getenv("SMTP_FROM", SMTP_USER or "no-reply@sorteops5gaming.com")
+
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", os.getenv("FRONTEND_URL", "http://localhost:3000"))
 
 PDF_LABELS = {
@@ -27,6 +34,80 @@ def _resolve_full_url(path: str) -> str:
     return f"{PUBLIC_BASE_URL.rstrip('/')}/{path.lstrip('/')}"
 
 
+def send_email_via_brevo(
+    to_email: str,
+    full_name: str,
+    dni: str,
+    ticket_numbers: List[str],
+    download_links: List[str],
+    order_id: int,
+) -> bool:
+    """
+    Envía el correo transaccional utilizando la API v3 de Brevo con el templateId especificado
+    y los parámetros requeridos (nombre, numeros, link_pdf_1, link_pdf_2, etc.).
+    """
+    if not BREVO_API_KEY:
+        return False
+
+    pdf_urls = [_resolve_full_url(link) for link in download_links]
+
+    params = {
+        "nombre": full_name,
+        "dni": dni,
+        "order_id": order_id,
+        "numeros": ", ".join(ticket_numbers),
+        "tickets": ticket_numbers,
+    }
+
+    # Asignar variables individuales link_pdf_1, link_pdf_2, etc. solicitadas
+    for i, url in enumerate(pdf_urls, start=1):
+        params[f"link_pdf_{i}"] = url
+
+    payload = {
+        "to": [{"email": to_email, "name": full_name}],
+        "params": params,
+    }
+
+    if BREVO_TEMPLATE_ID:
+        payload["templateId"] = BREVO_TEMPLATE_ID
+    else:
+        # Si no se configuró plantilla específica en Brevo, se envía contenido HTML estándar
+        payload["subject"] = f"Tus Guías Gaming Pro + Números Sorteo PS5 Slim (Orden #{order_id})"
+        payload["htmlContent"] = (
+            f"<h3>¡Hola {full_name}!</h3>"
+            f"<p>Tu pago fue confirmado. Tus números asignados son: <strong>{params['numeros']}</strong></p>"
+            f"<p>Descargas: "
+            + "".join(f"<br><a href='{u}'>{u}</a>" for u in pdf_urls)
+            + "</p>"
+        )
+
+    try:
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "api-key": BREVO_API_KEY,
+        }
+        with httpx.Client(timeout=15.0) as client:
+            response = client.post(
+                "https://api.brevo.com/v3/smtp/email",
+                json=payload,
+                headers=headers,
+            )
+            if response.status_code in (200, 201, 202):
+                logger.info(
+                    f"Email transaccional enviado con Brevo a {to_email} (Orden #{order_id}, messageId: {response.json().get('messageId')})"
+                )
+                return True
+            else:
+                logger.warning(
+                    f"Brevo API error status {response.status_code}: {response.text}"
+                )
+                return False
+    except Exception as exc:
+        logger.error(f"Excepción enviando correo con Brevo a {to_email}: {exc}")
+        return False
+
+
 def send_purchase_confirmation_email(
     to_email: str,
     full_name: str,
@@ -38,11 +119,25 @@ def send_purchase_confirmation_email(
 ) -> bool:
     """
     Envía un correo electrónico al comprador con los enlaces de descarga de los PDFs
-    correspondientes a su pack y la lista de números promocionales de 5 dígitos asignados.
+    y la lista de números promocionales de 5 dígitos asignados.
+    Intenta primero por Brevo API si BREVO_API_KEY está configurada, o por SMTP de respaldo.
     """
     links = download_links or ["/downloads/guia-optimizacion-red-fps-gaming-v2.pdf"]
-    formatted_numbers = ", ".join(ticket_numbers)
 
+    # 1. Intentar envío con Brevo API
+    if BREVO_API_KEY and not BREVO_API_KEY.startswith("xkeysib-0000"):
+        success = send_email_via_brevo(
+            to_email=to_email,
+            full_name=full_name,
+            dni=dni,
+            ticket_numbers=ticket_numbers,
+            download_links=links,
+            order_id=order_id,
+        )
+        if success:
+            return True
+
+    formatted_numbers = ", ".join(ticket_numbers)
     text_links = "\n".join(
         f" - {PDF_LABELS.get(link, link)}: {_resolve_full_url(link)}"
         for link in links

@@ -86,6 +86,10 @@ def create_mp_preference(order: Order, pack: Dict[str, Any]) -> Dict[str, Any]:
     notification_url = f"{WEBHOOK_BASE_URL.rstrip('/')}/api/webhook/mp"
     frontend_base = FRONTEND_URL.rstrip("/")
 
+    name_parts = (order.full_name or "").strip().split(" ", 1)
+    payer_name = name_parts[0] if name_parts else "Cliente"
+    payer_surname = name_parts[1] if len(name_parts) > 1 else ""
+
     preference_data = {
         "items": [
             {
@@ -98,7 +102,8 @@ def create_mp_preference(order: Order, pack: Dict[str, Any]) -> Dict[str, Any]:
             }
         ],
         "payer": {
-            "name": order.full_name,
+            "name": payer_name,
+            "surname": payer_surname,
             "email": order.email,
             "identification": {
                 "type": "DNI",
